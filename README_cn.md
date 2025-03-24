@@ -1,155 +1,155 @@
 # GoWorkflow
 
-A Golang-based workflow orchestration system, supporting Directed Acyclic Graph (DAG) scheduling.
+Golang 工作流编排系统，支持有向无环图(DAG)调度。
 
-## Features
+## 功能特点
 
-1. DAG (Directed Acyclic Graph) workflow model
-2. Unified node function interface taking `ctx, req, parentResult` parameters
-3. Concurrent node execution using goroutines
-4. Workflow compilation functionality to validate DAG structure
-5. Compiled workflows are frozen and cannot be modified
-6. Node timeout control
-7. Workflow cancellation support
-8. Safe concurrent execution of multiple workflow instances
-9. Node execution guarantees that all parent nodes complete before starting
-10. Nanosecond precision timing metrics for node and workflow start, end, and execution times
-11. Conditional dispatching that allows nodes to selectively trigger specific downstream nodes
-12. Optimized node context structure for better encapsulation and state management
+1. 支持 DAG (有向无环图) 工作流模型
+2. 节点函数统一接口，接收 `ctx, req, parentResult` 参数
+3. 节点使用协程并发执行
+4. 支持工作流编译 (compile) 功能，验证 DAG 结构
+5. 编译后的工作流被冻结，不允许修改
+6. 支持节点超时控制
+7. 支持工作流取消控制
+8. 并发执行多个工作流实例是安全的
+9. 节点执行保证所有父节点执行完成后才会启动
+10. 提供纳秒级时间精度的执行指标，包括节点和工作流的开始、结束和执行时间
+11. 支持条件分发，允许节点选择性地触发特定的下游节点
+12. 优化的节点上下文结构，提供更好的封装和状态管理
 
-## Code Structure
+## 代码结构
 
 ```
 workflow/
-├── workflow.go        # Core workflow implementation
-├── node.go            # Node definition and execution logic
-├── signal.go          # Signal system for conditional dispatching
-├── workflow_context.go # Execution context and state tracking
-├── node_context.go    # Per-node state and result management
-├── errors.go          # Error handling utilities
-├── workflow_test.go   # Primary tests for workflow functionality
-└── benchmark_test.go  # Performance benchmarks
+├── workflow.go        # 核心工作流实现
+├── node.go            # 节点定义和执行逻辑
+├── signal.go          # 条件分发信号系统
+├── workflow_context.go # 执行上下文和状态跟踪
+├── node_context.go    # 节点状态和结果管理
+├── errors.go          # 错误处理工具
+├── workflow_test.go   # 工作流功能的主要测试
+└── benchmark_test.go  # 性能基准测试
 ```
 
-## Implementation Details
+## 实现细节
 
-### Workflow Structure
+### 工作流结构
 
-The Workflow is the core of the system, containing:
+工作流 (Workflow) 是整个系统的核心，它包含以下组件：
 
-- **Graph Structure**: Uses the gograph library to implement the DAG topology
-- **Node Mapping**: Stores a map of node IDs to node objects
-- **Compilation State**: Indicates if the workflow is compiled and frozen
-- **Synchronization Lock**: Ensures thread safety
+- **图结构**: 使用 gograph 库实现 DAG 拓扑结构
+- **节点映射**: 存储节点ID到节点对象的映射
+- **编译状态**: 标识工作流是否已编译且被冻结
+- **同步锁**: 保证并发安全性
 
-### Node Structure
+### 节点结构
 
-A Node represents a processing unit in the workflow:
+节点 (Node) 代表工作流中的一个处理单元：
 
-- **ID**: Unique identifier for the node
-- **Execution Function**: Defines the node's processing logic
-- **Parent-Child Relationships**: Tracks dependencies between nodes
+- **ID**: 节点唯一标识符
+- **执行函数**: 定义节点的处理逻辑
+- **父子关系**: 记录节点之间的依赖关系
 
-### Node Context
+### 节点上下文
 
-The NodeContext encapsulates runtime information for a node:
+节点上下文 (NodeContext) 封装节点的运行时信息：
 
-- **Node State**: Records if the node is completed, cancelled, etc.
-- **Result Data**: Stores the output result of the node execution
-- **Timing Information**: Tracks node start and end times
-- **Conditional Dispatch**: Records nodes selected by the node for conditional routing
+- **节点状态**: 记录节点是否已完成、已取消等状态
+- **结果数据**: 存储节点执行的输出结果
+- **时间信息**: 记录节点的开始和结束时间
+- **条件分发**: 记录节点选择的下游节点，用于条件路由
 
-### Workflow Execution Process
+### 工作流执行过程
 
-1. **Compilation Check**: The workflow must be compiled before execution
-2. **Topological Sort**: Uses topological sorting to determine the node execution order
-3. **Concurrent Execution**: Launches goroutines for each node to execute concurrently
-4. **Dependency Waiting**: In an A->B relationship, B waits for A to complete before executing
-5. **Conditional Dispatch**: Nodes can return a SelectNodeSignal to selectively activate specific child nodes
-6. **Result Aggregation**: Each node's output is collected and returned
+1. **编译检查**: 在执行前必须先编译工作流
+2. **拓扑排序**: 使用拓扑排序确定节点执行顺序
+3. **并发执行**: 对每个节点启动协程并发执行
+4. **依赖等待**: A->B 关系中，B 会等待 A 完成后才执行
+5. **条件分发**: 节点可以返回 SelectNodeSignal 选择性激活特定的子节点
+6. **结果聚合**: 每个节点的输出会被收集并返回
 
-## Usage Examples
+## 使用方法
 
-### Defining Node Functions
+### 定义节点函数
 
 ```go
-// Define a node function
+// 定义节点函数
 nodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
-    // req is the original workflow input
+    // req是工作流的原始输入
     input := req.(string)
     
-    // parentResult contains results from parent nodes
+    // parentResult是父节点的结果，为map[string]interface{}类型
     parentData := parentResult.(map[string]interface{})
-    parentResult := parentData["parentNodeID"] // Get result from a specific parent node
+    parentResult := parentData["parentNodeID"] // 获取特定父节点的结果
     
-    // Business logic processing
-    output := fmt.Sprintf("Processed %s", input)
+    // 业务处理逻辑
+    output := fmt.Sprintf("处理后的%s", input)
     
-    // Return the result
+    // 返回结果
     return output, nil, nil
 }
 ```
 
-### Creating a Workflow
+### 创建工作流
 
 ```go
-// Create a workflow
-flow := workflow.NewWorkflow("example-workflow")
+// 创建工作流
+flow := workflow.NewWorkflow("示例工作流")
 
-// Add nodes to the workflow
+// 添加节点到工作流
 flow.AddNodeFunc("A", nodeAFunc)
 flow.AddNodeFunc("B", nodeBFunc)
 
-// Add edges (define dependencies)
-flow.AddEdge("A", "B")  // B depends on A
+// 添加边（定义依赖关系）
+flow.AddEdge("A", "B")  // B 依赖 A
 
-// Compile the workflow
+// 编译工作流
 if err := flow.Compile(); err != nil {
-    // Handle compilation error
+    // 处理编译错误
 }
 ```
 
-### Executing a Workflow
+### 执行工作流
 
 ```go
-// Create a context
+// 创建上下文
 ctx := context.Background()
 
-// Execute the workflow
-result, err := flow.Execute(ctx, "initial input")
+// 执行工作流
+result, err := flow.Execute(ctx, "初始输入")
 if err != nil {
-    // Handle execution error
+    // 处理执行错误
 }
 
-// Process results
+// 处理结果
 results := result.GetResults()
 for nodeID, output := range results {
-    fmt.Printf("Node %s result: %v\n", nodeID, output)
+    fmt.Printf("节点 %s 的结果: %v\n", nodeID, output)
 }
 ```
 
-### Using Conditional Dispatch
+### 使用条件分发
 
 ```go
-// Define a node function with conditional dispatch
+// 定义具有条件分发的节点函数
 routeNodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
-    // Processing logic
-    result := "Processing result"
+    // 处理逻辑
+    result := "处理结果"
     
-    // Choose downstream nodes based on conditions
+    // 根据条件选择下游节点
     if someCondition {
-        // Only activate "nodeA" and "nodeC"
+        // 只激活 "nodeA" 和 "nodeC"
         return workflow.SelectNodes(result, []string{"nodeA", "nodeC"})
     }
     
-    // When not specified, all child nodes are activated by default
+    // 不指定时，默认激活所有子节点
     return result, nil, nil
 }
 ```
 
-## Example Workflow
+## 示例工作流
 
-The included `main.go` demonstrates a complex workflow with the following structure:
+包含在 `main.go` 中的示例演示了一个复杂的工作流，其结构如下：
 
 ```
 A
@@ -161,7 +161,7 @@ A
 └──> K <──────────────────┘
 ```
 
-Node D uses a SelectNodeSignal to specifically select node F, causing paths through E and G to be cancelled.
+节点 D 使用 SelectNodeSignal 特别选择节点 F，导致通过 E 和 G 的路径被取消。
 
 Run `go run main.go`
 ```
@@ -256,6 +256,6 @@ PASS
 ok      goworkflow/workflow     5.079s
 ```
 
-## License
+## 许可证
 
-See the [LICENSE](LICENSE) file for license rights and limitations.
+关于许可权利和限制，请参阅 [LICENSE](LICENSE) 文件。
