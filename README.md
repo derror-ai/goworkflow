@@ -59,6 +59,17 @@ The NodeContext encapsulates runtime information for a node:
 - **Timing Information**: Tracks node start and end times
 - **Conditional Dispatch**: Records nodes selected by the node for conditional routing
 
+### Workflow Context
+
+The WorkflowContext manages the overall execution state:
+
+- **Context Management**: Wraps the user-provided context with cancellation capabilities
+- **Result Collection**: Aggregates results from all executed nodes
+- **Execution Tracking**: Monitors which nodes are completed, pending, or cancelled
+- **Timing Metrics**: Records workflow start time, end time, and total duration
+- **Signal Handling**: Processes conditional dispatch signals from nodes
+- **Error Propagation**: Manages error handling and workflow cancellation
+
 ### Workflow Execution Process
 
 1. **Compilation Check**: The workflow must be compiled before execution
