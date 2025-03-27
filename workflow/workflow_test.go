@@ -13,7 +13,7 @@ func TestWorkflowCompile(t *testing.T) {
 	w := NewWorkflow("test-compile")
 
 	// Create processing node
-	nodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	nodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		return fmt.Sprintf("processed-%v", req), nil, nil
 	}
 
@@ -52,7 +52,7 @@ func TestWorkflowExecution(t *testing.T) {
 
 	// Create node function
 	createNodeFunc := func(nodeID string) NodeFunc {
-		return func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+		return func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 			t.Logf("Node %s processing input: %v, parent result: %v", nodeID, req, parentResult)
 			// Simulate processing time
 			time.Sleep(50 * time.Millisecond)
@@ -123,7 +123,7 @@ func TestConcurrentWorkflowExecution(t *testing.T) {
 
 	// Create processing node
 	createNodeFunc := func(nodeID string) NodeFunc {
-		return func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+		return func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 			t.Logf("Node %s processing input: %v, parent result: %v", nodeID, req, parentResult)
 			// Simulate processing time
 			time.Sleep(50 * time.Millisecond)
@@ -148,7 +148,7 @@ func TestConcurrentWorkflowExecution(t *testing.T) {
 
 	// Execute workflow concurrently
 	numConcurrent := 3
-	var resultsChan = make(chan *WorkflowExecutionContext, numConcurrent)
+	var resultsChan = make(chan *WorkflowContext, numConcurrent)
 	var errorsChan = make(chan error, numConcurrent)
 
 	for i := 0; i < numConcurrent; i++ {
@@ -193,11 +193,12 @@ func TestWorkflowTimeoutAndCancel(t *testing.T) {
 	w := NewWorkflow("test-timeout-cancel")
 
 	// Create long-running node
-	longRunningNodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	longRunningNodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+
 		// Check context state before timeout
 		select {
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
+		case <-ctx.Ctx.Done():
+			return nil, nil, ctx.Ctx.Err()
 		default:
 			// Continue execution
 		}
@@ -207,8 +208,8 @@ func TestWorkflowTimeoutAndCancel(t *testing.T) {
 
 		// Check for timeout again
 		select {
-		case <-ctx.Done():
-			return nil, nil, ctx.Err() // Explicitly return context error
+		case <-ctx.Ctx.Done():
+			return nil, nil, ctx.Ctx.Err() // Explicitly return context error
 		default:
 			return "result", nil, nil
 		}
@@ -254,14 +255,14 @@ func TestNodeError(t *testing.T) {
 	w := NewWorkflow("test-node-error")
 
 	// Create normal node
-	normalNodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	normalNodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		t.Logf("Normal node processing input: %v, parent result: %v", req, parentResult)
 		time.Sleep(50 * time.Millisecond)
 		return "normal-result", nil, nil
 	}
 
 	// Create node that will produce an error
-	errorNodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	errorNodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		t.Logf("Error node processing input: %v, parent result: %v", req, parentResult)
 		time.Sleep(50 * time.Millisecond)
 		return nil, nil, fmt.Errorf("simulated error in node")
@@ -315,13 +316,13 @@ func TestConditionalDispatch(t *testing.T) {
 	w := NewWorkflow("test-conditional-dispatch")
 
 	// Create processing nodes
-	startNodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	startNodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		t.Logf("Start node processing input: %v, parent result: %v", req, parentResult)
 		// Return conditional selection signal, only selecting route1 node for execution
 		return SelectNodes("start-result", []string{"route1"})
 	}
 
-	route1NodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	route1NodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		t.Logf("Route1 node processing input: %v, parent result: %v", req, parentResult)
 		// Check if route2 was executed
 		// In the new design, cancelled node results don't appear in the result set
@@ -332,12 +333,12 @@ func TestConditionalDispatch(t *testing.T) {
 		return "route1-result", nil, nil
 	}
 
-	route2NodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	route2NodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		t.Errorf("Route2 node should NOT be executed")
 		return "route2-result", nil, nil
 	}
 
-	endNodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	endNodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		t.Logf("End node processing input: %v, parent result: %v", req, parentResult)
 		inputMap := parentResult.(map[string]interface{})
 		// Ensure only route1's result was received, route2 should not appear in the input

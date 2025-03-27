@@ -13,7 +13,7 @@ import (
 // id: 节点ID (node ID)
 // sleepTime: 睡眠时间，默认200ms (sleep time, default 200ms)
 func createNode(id string) workflow.NodeFunc {
-	return func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, workflow.Signal, error) {
+	return func(ctx *workflow.NodeContext, req interface{}, parentResult interface{}) (interface{}, workflow.Signal, error) {
 		startTime := time.Now()
 		fmt.Printf("[%s] Start execution, time: %s, input: %v, parent result: %v\n", id, startTime.Format("15:04:05.000"), req, parentResult)
 
@@ -22,9 +22,9 @@ func createNode(id string) workflow.NodeFunc {
 
 		// 检查上下文是否已取消 (Check if context is cancelled)
 		select {
-		case <-ctx.Done():
-			fmt.Printf("[%s] Execution cancelled: %v\n", id, ctx.Err())
-			return nil, nil, ctx.Err()
+		case <-ctx.Ctx.Done():
+			fmt.Printf("[%s] Execution cancelled: %v\n", id, ctx.Ctx.Err())
+			return nil, nil, ctx.Ctx.Err()
 		default:
 			// 继续执行 (Continue execution)
 		}
@@ -46,7 +46,7 @@ func createNode(id string) workflow.NodeFunc {
 }
 
 // 打印工作流执行时间信息 (Print workflow execution timing information)
-func printTimingInfo(result *workflow.WorkflowExecutionContext) {
+func printTimingInfo(result *workflow.WorkflowContext) {
 	fmt.Println("\nWorkflow Execution Timing Information:")
 	fmt.Printf("  Total execution time: %.2f ms\n", float64(result.GetWorkflowTimingInfo())/1e6)
 
@@ -58,7 +58,7 @@ func printTimingInfo(result *workflow.WorkflowExecutionContext) {
 }
 
 // 打印工作流执行结果简图 (Print workflow execution result diagram)
-func printWorkflowTree(w *workflow.Workflow, result *workflow.WorkflowExecutionContext) {
+func printWorkflowTree(w *workflow.Workflow, result *workflow.WorkflowContext) {
 	fmt.Println("\nWorkflow Execution Diagram:")
 
 	// 构建节点状态映射 (Build node status mapping)

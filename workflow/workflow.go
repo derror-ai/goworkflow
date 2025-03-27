@@ -12,7 +12,7 @@ import (
 // Workflow 表示一个工作流，内部使用 DAG 结构存储节点和边
 // Workflow represents a workflow, internally using DAG structure to store nodes and edges
 type Workflow struct {
-	name           string
+	ID             string // 工作流ID (Workflow ID)
 	graph          gograph.Graph[string]
 	nodes          map[string]*Node // 节点ID到节点的映射 (Mapping from node ID to node)
 	mutex          sync.RWMutex
@@ -23,9 +23,9 @@ type Workflow struct {
 
 // NewWorkflow 创建一个新的工作流
 // NewWorkflow creates a new workflow
-func NewWorkflow(name string) *Workflow {
+func NewWorkflow(id string) *Workflow {
 	return &Workflow{
-		name:        name,
+		ID:          id,
 		graph:       gograph.New[string](gograph.Directed(), gograph.Acyclic()),
 		nodes:       make(map[string]*Node),
 		isCompiled:  false,
@@ -42,13 +42,13 @@ func (w *Workflow) AddNode(node *Node) error {
 	// 检查工作流是否已编译
 	// Check if the workflow is already compiled
 	if w.isCompiled {
-		return NewWorkflowError(w.name, "cannot modify workflow after compilation")
+		return w.NewError("cannot modify workflow after compilation")
 	}
 
 	// 检查节点ID是否已存在
 	// Check if the node ID already exists
 	if _, exists := w.nodes[node.ID]; exists {
-		return NewWorkflowError(w.name, fmt.Sprintf("node with ID %s already exists", node.ID))
+		return w.NewError(fmt.Sprintf("node with ID %s already exists", node.ID))
 	}
 
 	// 将节点添加到图中
@@ -64,7 +64,7 @@ func (w *Workflow) AddNode(node *Node) error {
 // AddNodeFunc adds a node to the workflow (simplified version, directly accepts ID and function)
 func (w *Workflow) AddNodeFunc(id string, fn NodeFunc) error {
 	// 内部创建Node对象 (Internally create Node object)
-	node := NewNode(id, fn)
+	node := NewNode(w, id, fn)
 	return w.AddNode(node)
 }
 
@@ -77,19 +77,19 @@ func (w *Workflow) AddEdge(fromNodeID, toNodeID string) error {
 	// 检查工作流是否已编译
 	// Check if the workflow is already compiled
 	if w.isCompiled {
-		return NewWorkflowError(w.name, "cannot modify workflow after compilation")
+		return w.NewError("cannot modify workflow after compilation")
 	}
 
 	// 检查节点是否存在
 	// Check if the nodes exist
 	fromNode, fromExists := w.nodes[fromNodeID]
 	if !fromExists {
-		return NewWorkflowError(w.name, fmt.Sprintf("source node %s does not exist", fromNodeID))
+		return w.NewError(fmt.Sprintf("source node %s does not exist", fromNodeID))
 	}
 
 	toNode, toExists := w.nodes[toNodeID]
 	if !toExists {
-		return NewWorkflowError(w.name, fmt.Sprintf("target node %s does not exist", toNodeID))
+		return w.NewError(fmt.Sprintf("target node %s does not exist", toNodeID))
 	}
 
 	// 创建从源到目标的边
@@ -99,7 +99,7 @@ func (w *Workflow) AddEdge(fromNodeID, toNodeID string) error {
 
 	_, err := w.graph.AddEdge(fromVertex, toVertex)
 	if err != nil {
-		return NewWorkflowError(w.name, fmt.Sprintf("failed to add edge from %s to %s: %v", fromNodeID, toNodeID, err))
+		return w.NewError(fmt.Sprintf("failed to add edge from %s to %s: %v", fromNodeID, toNodeID, err))
 	}
 
 	// 更新节点关系
@@ -119,20 +119,20 @@ func (w *Workflow) Compile() error {
 	// 检查是否已编译
 	// Check if already compiled
 	if w.isCompiled {
-		return NewWorkflowError(w.name, "workflow is already compiled")
+		return w.NewError("workflow is already compiled")
 	}
 
 	// 如果没有节点，返回错误
 	// If there are no nodes, return an error
 	if len(w.nodes) == 0 {
-		return NewWorkflowError(w.name, "workflow has no nodes")
+		return w.NewError("workflow has no nodes")
 	}
 
 	// 检查DAG结构并获取拓扑排序
 	// Check DAG structure and get topological sort
 	iterator, err := traverse.NewTopologicalIterator(w.graph)
 	if err != nil {
-		return NewWorkflowError(w.name, fmt.Sprintf("invalid DAG structure: %v", err))
+		return w.NewError(fmt.Sprintf("invalid DAG structure: %v", err))
 	}
 
 	// 计算拓扑排序结果
@@ -146,7 +146,7 @@ func (w *Workflow) Compile() error {
 	// 如果获取的执行顺序为空但有节点，表示有问题
 	// If the execution order is empty but there are nodes, there is a problem
 	if len(executionOrder) == 0 {
-		return NewWorkflowError(w.name, "failed to determine execution order")
+		return w.NewError("failed to determine execution order")
 	}
 
 	// 找出入口节点（没有父节点的节点）
@@ -156,7 +156,7 @@ func (w *Workflow) Compile() error {
 		node := w.nodes[nodeID]
 		if len(node.Parents) == 0 {
 			if entryNodeID != "" {
-				return NewWorkflowError(w.name, "workflow has multiple entry points, expected only one")
+				return w.NewError("workflow has multiple entry points, expected only one")
 			}
 			entryNodeID = nodeID
 		}
@@ -165,7 +165,7 @@ func (w *Workflow) Compile() error {
 	// 如果没有入口节点，表示有问题
 	// If there is no entry node, there is a problem
 	if entryNodeID == "" {
-		return NewWorkflowError(w.name, "workflow has no entry point")
+		return w.NewError("workflow has no entry point")
 	}
 
 	// 分析节点之间的关系，设置直接调用标记
@@ -200,21 +200,21 @@ func (w *Workflow) IsCompiled() bool {
 // Execute executes the complete workflow
 // This is the recommended way to execute a workflow, it will automatically compile the workflow (if not yet compiled),
 // create execution context, start the entry node, and wait for all nodes to complete
-func (w *Workflow) Execute(ctx context.Context, input interface{}) (*WorkflowExecutionContext, error) {
+func (w *Workflow) Execute(ctx context.Context, input interface{}) (*WorkflowContext, error) {
 	w.mutex.RLock()
 	defer w.mutex.RUnlock()
 
 	if !w.isCompiled {
-		return nil, NewWorkflowError(w.name, "workflow must be compiled before execution")
+		return nil, w.NewError("workflow must be compiled before execution")
 	}
 
 	// 创建执行上下文
 	// Create execution context
-	execCtx := NewWorkflowExecutionContext(w, input)
+	execCtx := NewWorkflowContext(w, input)
 
 	// 将传入的ctx设置为上下文的父级
 	// Set the passed ctx as the parent of the context
-	execCtx.Ctx, execCtx.Cancel = context.WithCancel(context.WithValue(ctx, workflowIDKey, w.name))
+	execCtx.Ctx, execCtx.Cancel = context.WithCancel(ctx)
 
 	// 使用Start方法启动工作流
 	// Use Start method to start the workflow
@@ -229,4 +229,19 @@ func (w *Workflow) Execute(ctx context.Context, input interface{}) (*WorkflowExe
 	// Wait for all nodes to complete
 	err = execCtx.Wait()
 	return execCtx, err
+}
+
+// NewWorkflowError 创建一个工作流错误，可选包含节点ID
+// NewWorkflowError creates a workflow error, optionally containing a node ID
+func (w *Workflow) NewError(message string, nodeID ...string) error {
+	err := &WorkflowError{
+		WorkflowID: w.ID,
+		Message:    message,
+	}
+
+	if len(nodeID) > 0 && nodeID[0] != "" {
+		err.NodeID = nodeID[0]
+	}
+
+	return err
 }

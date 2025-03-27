@@ -7,14 +7,6 @@ import (
 	"time"
 )
 
-// 定义自定义类型作为上下文键，避免使用内置string类型
-// Define custom type as context key, avoid using built-in string type
-type contextKey string
-
-// 预定义上下文键
-// Predefined context keys
-const workflowIDKey contextKey = "workflow_id"
-
 // 工作流状态常量
 // Workflow state constants
 const (
@@ -25,9 +17,9 @@ const (
 	WorkflowStateError     = "error"     // 工作流错误状态 (Workflow error state)
 )
 
-// WorkflowExecutionContext 封装工作流执行所需的上下文和状态
-// WorkflowExecutionContext encapsulates the context and state needed for workflow execution
-type WorkflowExecutionContext struct {
+// WorkflowContext 封装工作流执行所需的上下文和状态
+// WorkflowContext encapsulates the context and state needed for workflow execution
+type WorkflowContext struct {
 	Workflow     *Workflow
 	Ctx          context.Context
 	Cancel       context.CancelFunc
@@ -63,23 +55,10 @@ type WorkflowExecutionContext struct {
 	nodeCompleteChan chan string
 }
 
-// NewWorkflowExecutionContext 创建一个新的工作流执行上下文
-// NewWorkflowExecutionContext creates a new workflow execution context
-func NewWorkflowExecutionContext(w *Workflow, input interface{}) *WorkflowExecutionContext {
+// NewWorkflowContext 创建一个新的工作流执行上下文
+// NewWorkflowContext creates a new workflow execution context
+func NewWorkflowContext(w *Workflow, input interface{}) *WorkflowContext {
 	ctx, cancel := context.WithCancel(context.Background())
-
-	// 从上下文获取或创建工作流ID
-	// Get or create workflow ID from context
-	var workflowID string
-	if w.name != "" {
-		workflowID = w.name
-	} else {
-		workflowID = fmt.Sprintf("wf-%d", time.Now().UnixNano())
-	}
-
-	// 将工作流ID添加到上下文
-	// Add workflow ID to context
-	ctx = context.WithValue(ctx, workflowIDKey, workflowID)
 
 	now := time.Now()
 
@@ -87,21 +66,11 @@ func NewWorkflowExecutionContext(w *Workflow, input interface{}) *WorkflowExecut
 	// Node count
 	nodeCount := len(w.nodes)
 
-	// 初始化NodeContexts
-	// Initialize NodeContexts
-	nodeContexts := make(map[string]*NodeContext, nodeCount)
-	for nodeID, node := range w.nodes {
-		nodeContexts[nodeID] = NewNodeContext(nodeID, node)
-	}
-
-	// 初始化上下文结构
-	// Initialize context structure
-	return &WorkflowExecutionContext{
+	workflowCtx := &WorkflowContext{
 		Workflow:         w,
 		Ctx:              ctx,
 		Cancel:           cancel,
 		Input:            input,
-		NodeContexts:     nodeContexts,
 		totalNodes:       nodeCount,
 		State:            WorkflowStateCreated,
 		IsStarted:        false,
@@ -112,11 +81,24 @@ func NewWorkflowExecutionContext(w *Workflow, input interface{}) *WorkflowExecut
 		EndTime:          time.Time{},
 		nodeCompleteChan: make(chan string, nodeCount*2),
 	}
+
+	// 初始化NodeContexts
+	// Initialize NodeContexts
+	nodeContexts := make(map[string]*NodeContext, nodeCount)
+	for nodeID, node := range w.nodes {
+		nodeContexts[nodeID] = NewNodeContext(workflowCtx, nodeID, node)
+	}
+
+	workflowCtx.NodeContexts = nodeContexts
+
+	// 初始化上下文结构
+	// Initialize context structure
+	return workflowCtx
 }
 
 // getNodeContext 安全地获取节点上下文，如果不存在则返回nil
 // getNodeContext safely gets the node context, returns nil if it doesn't exist
-func (ec *WorkflowExecutionContext) getNodeContext(nodeID string) *NodeContext {
+func (ec *WorkflowContext) getNodeContext(nodeID string) *NodeContext {
 	// NodeContexts在初始化后不再修改，无需加锁
 	// NodeContexts is not modified after initialization, no lock needed
 	nc, exists := ec.NodeContexts[nodeID]
@@ -132,13 +114,13 @@ func (ec *WorkflowExecutionContext) getNodeContext(nodeID string) *NodeContext {
 // 如果节点不存在，将返回错误
 // TryStartNode attempts to start a node, executes it if all parent nodes have completed
 // If the node doesn't exist, an error will be returned
-func (ec *WorkflowExecutionContext) tryStartNode(nodeID string) {
+func (ec *WorkflowContext) tryStartNode(nodeID string) {
 
 	// 获取节点上下文
 	// Get node context
 	nc := ec.getNodeContext(nodeID)
 	if nc == nil {
-		ec.markWorkflowAsError(nil, NewWorkflowError(ec.Workflow.name, fmt.Sprintf("node with ID %s does not exist", nodeID)))
+		ec.markWorkflowAsError(nil, ec.Workflow.NewError(fmt.Sprintf("node with ID %s does not exist", nodeID)))
 		return
 	}
 
@@ -228,18 +210,18 @@ func (ec *WorkflowExecutionContext) tryStartNode(nodeID string) {
 // 这是推荐的工作流启动方法，避免了外部调用者需要知道入口节点ID
 // Start starts workflow execution, only starting the entry node
 // This is the recommended workflow start method, avoiding the need for external callers to know the entry node ID
-func (ec *WorkflowExecutionContext) Start() error {
+func (ec *WorkflowContext) Start() error {
 	// 检查工作流是否已编译
 	// Check if the workflow has been compiled
 	if !ec.Workflow.IsCompiled() {
-		return NewWorkflowError(ec.Workflow.name, "workflow must be compiled before starting")
+		return ec.Workflow.NewError("workflow must be compiled before starting")
 	}
 
 	// 获取入口节点ID
 	// Get entry node ID
 	entryNodeID := ec.Workflow.entryNodeID
 	if entryNodeID == "" {
-		return NewWorkflowError(ec.Workflow.name, "workflow has no entry point")
+		return ec.Workflow.NewError("workflow has no entry point")
 	}
 
 	// 更新工作流状态为已启动
@@ -257,10 +239,10 @@ func (ec *WorkflowExecutionContext) Start() error {
 
 // executeNode 执行节点的核心逻辑，无论是直接调用还是在协程中调用
 // executeNode executes the core logic of the node, whether called directly or in a goroutine
-func (ec *WorkflowExecutionContext) executeNode(nc *NodeContext) {
+func (ec *WorkflowContext) executeNode(nc *NodeContext) {
 	// 执行节点函数
 	// Execute node function
-	result, signal, err := nc.Node.Execute(ec.Ctx, ec.Input, nc.Input)
+	result, signal, err := nc.Node.Execute(nc, ec.Input, nc.Input)
 	nodeEndTime := time.Now()
 
 	// 标记节点为已完成并存储相关信息
@@ -295,7 +277,7 @@ func (ec *WorkflowExecutionContext) executeNode(nc *NodeContext) {
 
 // notifyNodeComplete 通知节点完成
 // notifyNodeComplete notifies node completion
-func (ec *WorkflowExecutionContext) notifyNodeCompleted(nodeId string) {
+func (ec *WorkflowContext) notifyNodeCompleted(nodeId string) {
 	// 通知节点完成 - 使用非阻塞发送以防止死锁
 	// Notify node completion - use non-blocking send to prevent deadlock
 	select {
@@ -310,7 +292,7 @@ func (ec *WorkflowExecutionContext) notifyNodeCompleted(nodeId string) {
 
 // isContextCancelled 检查上下文是否已取消
 // isContextCancelled checks if the context has been canceled
-func (ec *WorkflowExecutionContext) isContextCancelled() bool {
+func (ec *WorkflowContext) isContextCancelled() bool {
 	select {
 	case <-ec.Ctx.Done():
 		return true
@@ -321,7 +303,7 @@ func (ec *WorkflowExecutionContext) isContextCancelled() bool {
 
 // setStarted 标记工作流为已启动
 // setStarted marks the workflow as started
-func (ec *WorkflowExecutionContext) setStarted() {
+func (ec *WorkflowContext) setStarted() {
 	ec.stateMutex.Lock()
 	defer ec.stateMutex.Unlock()
 	ec.IsStarted = true
@@ -330,7 +312,7 @@ func (ec *WorkflowExecutionContext) setStarted() {
 
 // setCompleted 标记工作流为已完成
 // setCompleted marks the workflow as completed
-func (ec *WorkflowExecutionContext) setCompleted() {
+func (ec *WorkflowContext) setCompleted() {
 	ec.stateMutex.Lock()
 	defer ec.stateMutex.Unlock()
 	ec.IsCompleted = true
@@ -344,7 +326,7 @@ func (ec *WorkflowExecutionContext) setCompleted() {
 
 // setCanceled 标记工作流为已取消
 // setCanceled marks the workflow as canceled
-func (ec *WorkflowExecutionContext) setCanceled() {
+func (ec *WorkflowContext) setCanceled() {
 	ec.stateMutex.Lock()
 	defer ec.stateMutex.Unlock()
 	ec.IsCanceled = true
@@ -359,7 +341,7 @@ func (ec *WorkflowExecutionContext) setCanceled() {
 
 // setError 设置工作流错误并更新状态
 // setError sets workflow error and updates state
-func (ec *WorkflowExecutionContext) setError(err error) {
+func (ec *WorkflowContext) setError(err error) {
 	ec.stateMutex.Lock()
 	defer ec.stateMutex.Unlock()
 	ec.Error = err
@@ -374,7 +356,7 @@ func (ec *WorkflowExecutionContext) setError(err error) {
 
 // GetState 获取工作流状态
 // GetState gets the workflow state
-func (ec *WorkflowExecutionContext) GetState() string {
+func (ec *WorkflowContext) GetState() string {
 	ec.stateMutex.RLock()
 	defer ec.stateMutex.RUnlock()
 	return ec.State
@@ -382,7 +364,7 @@ func (ec *WorkflowExecutionContext) GetState() string {
 
 // markWorkflowAsError 处理节点执行错误
 // markWorkflowAsError handles node execution errors
-func (ec *WorkflowExecutionContext) markWorkflowAsError(nc *NodeContext, err error) {
+func (ec *WorkflowContext) markWorkflowAsError(nc *NodeContext, err error) {
 	// 如果节点上下文不为nil，设置错误
 	// If node context is not nil, set error
 	if nc != nil {
@@ -414,7 +396,7 @@ func (ec *WorkflowExecutionContext) markWorkflowAsError(nc *NodeContext, err err
 
 // markNodeAsCanceled 标记节点为已取消状态
 // markNodeAsCanceled marks the node as canceled
-func (ec *WorkflowExecutionContext) markNodeAsCanceled(nc *NodeContext) {
+func (ec *WorkflowContext) markNodeAsCanceled(nc *NodeContext) {
 
 	// 如果节点不是创建状态，则跳过
 	// If the node is not in created state, skip
@@ -437,7 +419,7 @@ func (ec *WorkflowExecutionContext) markNodeAsCanceled(nc *NodeContext) {
 
 // GetNodeTimingInfo 获取所有节点的时间信息（纳秒）
 // GetNodeTimingInfo gets time information for all nodes (nanoseconds)
-func (ec *WorkflowExecutionContext) GetNodeTimingInfo() map[string]int64 {
+func (ec *WorkflowContext) GetNodeTimingInfo() map[string]int64 {
 	result := make(map[string]int64)
 
 	// NodeContexts在初始化后不再修改，无需加锁
@@ -453,7 +435,7 @@ func (ec *WorkflowExecutionContext) GetNodeTimingInfo() map[string]int64 {
 
 // GetStartTimeNano 获取工作流开始时间（纳秒时间戳）
 // GetStartTimeNano gets workflow start time (nanosecond timestamp)
-func (ec *WorkflowExecutionContext) GetStartTimeNano() int64 {
+func (ec *WorkflowContext) GetStartTimeNano() int64 {
 	ec.timesMutex.Lock()
 	defer ec.timesMutex.Unlock()
 	return ec.StartTime.UnixNano()
@@ -461,7 +443,7 @@ func (ec *WorkflowExecutionContext) GetStartTimeNano() int64 {
 
 // GetEndTimeNano 获取工作流结束时间（纳秒时间戳）
 // GetEndTimeNano gets workflow end time (nanosecond timestamp)
-func (ec *WorkflowExecutionContext) GetEndTimeNano() int64 {
+func (ec *WorkflowContext) GetEndTimeNano() int64 {
 	ec.timesMutex.Lock()
 	defer ec.timesMutex.Unlock()
 	return ec.EndTime.UnixNano()
@@ -469,7 +451,7 @@ func (ec *WorkflowExecutionContext) GetEndTimeNano() int64 {
 
 // GetNodeStartTimeNano 获取指定节点的开始时间（纳秒时间戳）
 // GetNodeStartTimeNano gets the start time of the specified node (nanosecond timestamp)
-func (ec *WorkflowExecutionContext) GetNodeStartTimeNano(nodeID string) int64 {
+func (ec *WorkflowContext) GetNodeStartTimeNano(nodeID string) int64 {
 	nc := ec.getNodeContext(nodeID)
 
 	if nc.StartTime.IsZero() {
@@ -480,7 +462,7 @@ func (ec *WorkflowExecutionContext) GetNodeStartTimeNano(nodeID string) int64 {
 
 // GetNodeEndTimeNano 获取指定节点的结束时间（纳秒时间戳）
 // GetNodeEndTimeNano gets the end time of the specified node (nanosecond timestamp)
-func (ec *WorkflowExecutionContext) GetNodeEndTimeNano(nodeID string) int64 {
+func (ec *WorkflowContext) GetNodeEndTimeNano(nodeID string) int64 {
 	nc := ec.getNodeContext(nodeID)
 
 	if nc.EndTime.IsZero() {
@@ -491,7 +473,7 @@ func (ec *WorkflowExecutionContext) GetNodeEndTimeNano(nodeID string) int64 {
 
 // GetWorkflowTimingInfo 获取工作流的时间信息（纳秒）
 // GetWorkflowTimingInfo gets the workflow timing information (nanoseconds)
-func (ec *WorkflowExecutionContext) GetWorkflowTimingInfo() int64 {
+func (ec *WorkflowContext) GetWorkflowTimingInfo() int64 {
 	ec.timesMutex.Lock()
 	defer ec.timesMutex.Unlock()
 
@@ -507,7 +489,7 @@ func (ec *WorkflowExecutionContext) GetWorkflowTimingInfo() int64 {
 
 // Wait 等待所有节点完成或工作流被取消
 // Wait waits for all nodes to complete or for the workflow to be canceled
-func (ec *WorkflowExecutionContext) Wait() error {
+func (ec *WorkflowContext) Wait() error {
 	defer ec.Cancel() // 确保上下文被取消 (Ensure context is canceled)
 
 	// 首先检查全局错误，如果有则直接返回
@@ -563,14 +545,14 @@ func (ec *WorkflowExecutionContext) Wait() error {
 				// 设置取消状态和错误
 				// Set cancellation state and error
 				ec.setCanceled()
-				ec.setError(NewWorkflowError(ec.Workflow.name, fmt.Sprintf("workflow execution cancelled: %v", ctxErr)))
+				ec.setError(ec.Workflow.NewError(fmt.Sprintf("workflow execution cancelled: %v", ctxErr)))
 				return ec.Error
 			}
 
 			// 设置未知原因的取消
 			// Set cancellation for unknown reason
 			ec.setCanceled()
-			ec.setError(NewWorkflowError(ec.Workflow.name, "workflow execution cancelled for unknown reason"))
+			ec.setError(ec.Workflow.NewError("workflow execution cancelled for unknown reason"))
 			return ec.Error
 		}
 	}
@@ -590,7 +572,7 @@ func (ec *WorkflowExecutionContext) Wait() error {
 
 // 获取剩余未完成的节点数
 // Get the number of remaining incomplete nodes
-func (ec *WorkflowExecutionContext) getRemainingNodes() int {
+func (ec *WorkflowContext) getRemainingNodes() int {
 	completedNodes := 0
 
 	// NodeContexts在初始化后不再修改，无需加锁
@@ -606,7 +588,7 @@ func (ec *WorkflowExecutionContext) getRemainingNodes() int {
 
 // IsActive 检查工作流是否已启动但未完成
 // IsActive checks if the workflow has started but not completed
-func (ec *WorkflowExecutionContext) IsActive() bool {
+func (ec *WorkflowContext) IsActive() bool {
 	ec.stateMutex.RLock()
 	defer ec.stateMutex.RUnlock()
 	return ec.IsStarted && !ec.IsCompleted
@@ -614,7 +596,7 @@ func (ec *WorkflowExecutionContext) IsActive() bool {
 
 // collectParentResults 收集节点的父节点结果作为输入
 // collectParentResults collects parent node results as input for the node
-func (ec *WorkflowExecutionContext) collectParentResults(nc *NodeContext) interface{} {
+func (ec *WorkflowContext) collectParentResults(nc *NodeContext) interface{} {
 	parentIDs := nc.Node.Parents
 
 	// 如果没有父节点，直接使用初始输入
@@ -655,14 +637,14 @@ func (ec *WorkflowExecutionContext) collectParentResults(nc *NodeContext) interf
 
 // GetNodeState 获取指定节点的状态
 // GetNodeState gets the state of the specified node
-func (ec *WorkflowExecutionContext) GetNodeState(nodeID string) string {
+func (ec *WorkflowContext) GetNodeState(nodeID string) string {
 	nc := ec.getNodeContext(nodeID)
 	return nc.GetState()
 }
 
 // GetResults 获取所有节点的结果
 // GetResults gets results for all nodes
-func (ec *WorkflowExecutionContext) GetResults() map[string]interface{} {
+func (ec *WorkflowContext) GetResults() map[string]interface{} {
 	results := make(map[string]interface{})
 
 	// NodeContexts在初始化后不再修改，无需加锁

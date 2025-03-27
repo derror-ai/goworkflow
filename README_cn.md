@@ -85,7 +85,7 @@ workflow/
 
 ```go
 // 定义节点函数
-nodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+nodeFunc := func(ctx *workflow.NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
     // req是工作流的原始输入
     input := req.(string)
     
@@ -143,7 +143,7 @@ for nodeID, output := range results {
 
 ```go
 // 定义具有条件分发的节点函数
-routeNodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+routeNodeFunc := func(ctx *workflow.NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
     // 处理逻辑
     result := "处理结果"
     

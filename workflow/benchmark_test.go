@@ -8,7 +8,7 @@ import (
 
 // High-performance node function, returns directly without sleep
 func benchNodeFunc(id string) NodeFunc {
-	return func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	return func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		// No sleep, return result directly
 		if inputMap, ok := parentResult.(map[string]interface{}); ok {
 			// Simple processing of parent node input
@@ -180,7 +180,7 @@ func BenchmarkSelectiveExecution(b *testing.B) {
 	w := NewWorkflow("bench-selective-execution")
 
 	// Create a node that uses conditional dispatch, not selecting any subsequent nodes
-	selectiveFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+	selectiveFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
 		// Return empty target node list, indicating no child nodes are selected
 		return "selective-node-result", NewSelectNodeSignal([]string{}), nil
 	}

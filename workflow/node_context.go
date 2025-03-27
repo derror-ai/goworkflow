@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -16,20 +17,36 @@ const (
 // NodeContext 包含节点的所有相关信息和状态
 // NodeContext contains all relevant information and state of the node
 type NodeContext struct {
-	NodeID           string        // 节点的唯一标识 (Node unique identifier)
-	Node             *Node         // 节点的引用 (Reference to the node)
-	state            string        // 节点状态："created"、"completed"或"canceled"，私有字段 (Node state: "created", "completed" or "canceled", private field)
-	Result           interface{}   // 节点执行结果 (Node execution result)
-	Input            interface{}   // 节点输入数据 (Node input data)
-	Error            error         // 节点执行错误 (Node execution error)
-	StartTime        time.Time     // 节点开始执行时间 (Node execution start time)
-	EndTime          time.Time     // 节点结束执行时间 (Node execution end time)
-	ElapsedTime      time.Duration // 节点执行耗时 (Node execution elapsed time)
-	IsStarted        bool          // 节点是否已启动 (Whether the node has started)
-	IsCompleted      bool          // 节点是否已完成 (Whether the node has completed)
-	IsCanceled       bool          // 节点是否已取消 (Whether the node has been canceled)
-	SelectedChildren []string      // 存储节点选择的子节点ID列表，用于条件分发 (Stores list of child node IDs selected by the node, used for conditional dispatching)
-	mutex            sync.RWMutex  // 保护此节点上下文的锁 (Lock to protect this node context)
+	Ctx              context.Context
+	WorkflowCtx      *WorkflowContext // 工作流上下文 (Workflow context)
+	NodeID           string           // 节点的唯一标识 (Node unique identifier)
+	Node             *Node            // 节点的引用 (Reference to the node)
+	state            string           // 节点状态："created"、"completed"或"canceled"，私有字段 (Node state: "created", "completed" or "canceled", private field)
+	Result           interface{}      // 节点执行结果 (Node execution result)
+	Input            interface{}      // 节点输入数据 (Node input data)
+	Error            error            // 节点执行错误 (Node execution error)
+	StartTime        time.Time        // 节点开始执行时间 (Node execution start time)
+	EndTime          time.Time        // 节点结束执行时间 (Node execution end time)
+	ElapsedTime      time.Duration    // 节点执行耗时 (Node execution elapsed time)
+	IsStarted        bool             // 节点是否已启动 (Whether the node has started)
+	IsCompleted      bool             // 节点是否已完成 (Whether the node has completed)
+	IsCanceled       bool             // 节点是否已取消 (Whether the node has been canceled)
+	SelectedChildren []string         // 存储节点选择的子节点ID列表，用于条件分发 (Stores list of child node IDs selected by the node, used for conditional dispatching)
+	mutex            sync.RWMutex     // 保护此节点上下文的锁 (Lock to protect this node context)
+}
+
+// NewNodeContext 创建一个新的节点上下文实例
+// NewNodeContext creates a new node context instance
+func NewNodeContext(workflowCtx *WorkflowContext, nodeID string, node *Node) *NodeContext {
+	return &NodeContext{
+		Ctx:         workflowCtx.Ctx,
+		WorkflowCtx: workflowCtx,
+		NodeID:      nodeID,
+		Node:        node,
+		state:       NodeStateCreated,
+		// 其他字段保持默认零值
+		// Other fields keep default zero values
+	}
 }
 
 // GetState 获取节点状态
@@ -158,16 +175,4 @@ func (nc *NodeContext) IsChildSelected(childID string) bool {
 		}
 	}
 	return false
-}
-
-// NewNodeContext 创建一个新的节点上下文实例
-// NewNodeContext creates a new node context instance
-func NewNodeContext(nodeID string, node *Node) *NodeContext {
-	return &NodeContext{
-		NodeID: nodeID,
-		Node:   node,
-		state:  NodeStateCreated,
-		// 其他字段保持默认零值
-		// Other fields keep default zero values
-	}
 }

@@ -85,7 +85,7 @@ The WorkflowContext manages the overall execution state:
 
 ```go
 // Define a node function
-nodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+nodeFunc := func(ctx *workflow.NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
     // req is the original workflow input
     input := req.(string)
     
@@ -143,7 +143,7 @@ for nodeID, output := range results {
 
 ```go
 // Define a node function with conditional dispatch
-routeNodeFunc := func(ctx context.Context, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+routeNodeFunc := func(ctx *workflow.NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
     // Processing logic
     result := "Processing result"
     
