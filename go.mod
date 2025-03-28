@@ -1,4 +1,4 @@
-module goworkflow
+module github.com/derror-ai/goworkflow
 
 go 1.23.6
 

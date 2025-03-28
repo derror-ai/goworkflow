@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"goworkflow/workflow"
+	"github.com/derror-ai/goworkflow/workflow"
 )
 
 // 创建一个节点函数 (Create a node function)
