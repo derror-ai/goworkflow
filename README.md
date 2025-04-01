@@ -249,22 +249,22 @@ Workflow Execution Path Explanation:
 ```
 goos: darwin
 goarch: arm64
-pkg: goworkflow/workflow
+pkg: github.com/derror-ai/goworkflow/workflow
 cpu: Apple M4
 === RUN   BenchmarkWorkflowExecution
 BenchmarkWorkflowExecution
-BenchmarkWorkflowExecution-10                     158251              6938 ns/op            4961 B/op          64 allocs/op
+BenchmarkWorkflowExecution-10                      79782             14845 ns/op            5031 B/op         64 allocs/op
 === RUN   BenchmarkWorkflowCompileAndExecute
 BenchmarkWorkflowCompileAndExecute
-BenchmarkWorkflowCompileAndExecute-10              86570             14158 ns/op           11850 B/op         237 allocs/op
+BenchmarkWorkflowCompileAndExecute-10              64549             18860 ns/op           10667 B/op        217 allocs/op
 === RUN   BenchmarkParallelWorkflowExecution
 BenchmarkParallelWorkflowExecution
-BenchmarkParallelWorkflowExecution-10             705471              1649 ns/op            4965 B/op          64 allocs/op
+BenchmarkParallelWorkflowExecution-10             503532              2343 ns/op            5030 B/op         64 allocs/op
 === RUN   BenchmarkSelectiveExecution
 BenchmarkSelectiveExecution
-BenchmarkSelectiveExecution-10                    344964              3388 ns/op            2641 B/op          31 allocs/op
+BenchmarkSelectiveExecution-10                    282290              4198 ns/op            2625 B/op         29 allocs/op
 PASS
-ok      goworkflow/workflow     5.079s
+ok      github.com/derror-ai/goworkflow/workflow        5.326s
 ```
 
 ## License

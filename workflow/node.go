@@ -13,24 +13,22 @@ type NodeFunc func(ctx *NodeContext, req interface{}, parentResult interface{}) 
 // Node 表示工作流中的一个节点
 // Node represents a node in the workflow
 type Node struct {
-	Workflow   *Workflow // 工作流 (Workflow)
-	ID         string    // 节点唯一标识 (Node unique identifier)
-	Func       NodeFunc  // 节点执行的函数 (Function executed by the node)
-	Parents    []string  // 父节点ID列表 (List of parent node IDs)
-	Children   []string  // 子节点ID列表 (List of child node IDs)
-	DirectCall bool      // 标记是否可以直接调用（不使用协程） (Flag to mark if it can be called directly (without goroutine))
+	Workflow *Workflow // 工作流 (Workflow)
+	ID       string    // 节点唯一标识 (Node unique identifier)
+	Func     NodeFunc  // 节点执行的函数 (Function executed by the node)
+	Parents  []string  // 父节点ID列表 (List of parent node IDs)
+	Children []string  // 子节点ID列表 (List of child node IDs)
 }
 
 // NewNode 创建一个新的工作流节点
 // NewNode creates a new workflow node
 func NewNode(workflow *Workflow, id string, fn NodeFunc) *Node {
 	return &Node{
-		Workflow:   workflow,
-		ID:         id,
-		Func:       fn,
-		Parents:    []string{},
-		Children:   []string{},
-		DirectCall: false, // 默认使用协程执行 (Default to execute using goroutine)
+		Workflow: workflow,
+		ID:       id,
+		Func:     fn,
+		Parents:  []string{},
+		Children: []string{},
 	}
 }
 

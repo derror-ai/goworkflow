@@ -187,6 +187,121 @@ func TestConcurrentWorkflowExecution(t *testing.T) {
 	}
 }
 
+func TestWorkflowMultiChildrenExecution(t *testing.T) {
+	// Create a new workflow
+	w := NewWorkflow("test-execution-multi-children")
+
+	// Create node function
+	createNodeFunc := func(nodeID string) NodeFunc {
+		return func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+			t.Logf("Node %s processing input: %v, parent result: %v", nodeID, req, parentResult)
+			// Simulate processing time
+			time.Sleep(1000 * time.Millisecond)
+			return fmt.Sprintf("%s-processed-%v", nodeID, req), nil, nil
+		}
+	}
+
+	// Add nodes to the workflow
+	w.AddNodeFunc("A", createNodeFunc("A"))
+	w.AddNodeFunc("B", createNodeFunc("B"))
+	w.AddNodeFunc("C", createNodeFunc("C"))
+	w.AddNodeFunc("D", createNodeFunc("D"))
+	w.AddNodeFunc("E", createNodeFunc("E"))
+	w.AddNodeFunc("F", createNodeFunc("F"))
+	w.AddNodeFunc("G", createNodeFunc("G"))
+	w.AddNodeFunc("H", createNodeFunc("H"))
+
+	// Add edges
+	w.AddEdge("A", "B")
+	w.AddEdge("A", "C")
+
+	w.AddEdge("B", "D")
+	w.AddEdge("B", "E")
+
+	w.AddEdge("C", "F")
+	w.AddEdge("C", "G")
+
+	w.AddEdge("D", "H")
+	w.AddEdge("E", "H")
+	w.AddEdge("F", "H")
+	w.AddEdge("G", "H")
+
+	// Compile workflow
+	err := w.Compile()
+	if err != nil {
+		t.Fatalf("Failed to compile workflow: %v", err)
+	}
+
+	// Execute workflow
+	result, err := w.Execute(context.Background(), "test-input")
+	if err != nil {
+		t.Fatalf("Failed to execute workflow: %v", err)
+	}
+
+	// Check results
+	results := result.GetResults()
+	for nodeID, output := range results {
+		t.Logf("Node %s result: %v", nodeID, output)
+	}
+
+	// Verify final node H result
+	if _, ok := results["H"]; !ok {
+		t.Errorf("Expected result for node H, but not found")
+	}
+
+	// Check timing information
+	t.Logf("Workflow start time: %s", time.Unix(0, result.GetStartTimeNano()).Format(time.RFC3339Nano))
+	t.Logf("Workflow end time: %s", time.Unix(0, result.GetEndTimeNano()).Format(time.RFC3339Nano))
+	t.Logf("Workflow total time: %d ns", result.GetWorkflowTimingInfo())
+
+	// 获取D、E、F、G节点的开始时间
+	dStartTime := result.GetNodeStartTimeNano("D")
+	eStartTime := result.GetNodeStartTimeNano("E")
+	fStartTime := result.GetNodeStartTimeNano("F")
+	gStartTime := result.GetNodeStartTimeNano("G")
+
+	// 检查这些节点的开始时间差异不应超过100ms
+	maxDiff := int64(100 * 1000 * 1000) // 100ms转换为纳秒
+
+	// 找出最早和最晚的开始时间
+	startTimes := []int64{dStartTime, eStartTime, fStartTime, gStartTime}
+	var earliestStart, latestStart int64
+
+	// 初始化最早和最晚时间
+	earliestStart = startTimes[0]
+	latestStart = startTimes[0]
+
+	for _, startTime := range startTimes {
+		if startTime < earliestStart {
+			earliestStart = startTime
+		}
+		if startTime > latestStart {
+			latestStart = startTime
+		}
+	}
+
+	timeDiff := latestStart - earliestStart
+	t.Logf("Time difference between earliest and latest start of D,E,F,G: %d ns (%f ms)",
+		timeDiff, float64(timeDiff)/1000000.0)
+
+	if timeDiff > maxDiff {
+		t.Errorf("Nodes D,E,F,G should start within 100ms of each other, but actual difference was %f ms",
+			float64(timeDiff)/1000000.0)
+	}
+
+	for nodeID, timeNano := range result.GetNodeTimingInfo() {
+		t.Logf("Node %s:", nodeID)
+		t.Logf("  Start time: %s", time.Unix(0, result.GetNodeStartTimeNano(nodeID)).Format(time.RFC3339Nano))
+		t.Logf("  End time: %s", time.Unix(0, result.GetNodeEndTimeNano(nodeID)).Format(time.RFC3339Nano))
+		t.Logf("  Execution time: %d ns", timeNano)
+
+		// Verify node execution time is at least 50ms (our sleep time)
+		if timeNano < 50000000 { // 50ms = 50,000,000ns
+			t.Errorf("Node %s time too short: %d ns, expected at least 50000000 ns", nodeID, timeNano)
+		}
+	}
+}
+
 // TestWorkflowTimeoutAndCancel tests workflow timeout and cancellation functionality
 func TestWorkflowTimeoutAndCancel(t *testing.T) {
 	// Create workflow

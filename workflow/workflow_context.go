@@ -191,19 +191,12 @@ func (ec *WorkflowContext) tryStartNode(nodeID string) {
 	nodeInput := ec.collectParentResults(nc)
 	nc.Input = nodeInput
 
-	// 检查节点是否可以直接调用
-	// Check if the node can be directly called
-	if nc.Node.DirectCall {
-		// 直接执行节点，传入节点和输入数据
-		// Directly execute the node, passing node and input data
+	// 启动协程执行节点
+	// Start a goroutine to execute the node
+	go func() {
 		ec.executeNode(nc)
-	} else {
-		// 启动协程执行节点
-		// Start a goroutine to execute the node
-		go func() {
-			ec.executeNode(nc)
-		}()
-	}
+	}()
+
 }
 
 // Start 启动工作流执行，仅启动入口节点
@@ -280,14 +273,15 @@ func (ec *WorkflowContext) executeNode(nc *NodeContext) {
 func (ec *WorkflowContext) notifyNodeCompleted(nodeId string) {
 	// 通知节点完成 - 使用非阻塞发送以防止死锁
 	// Notify node completion - use non-blocking send to prevent deadlock
-	select {
-	case ec.nodeCompleteChan <- nodeId:
-		// 消息成功发送
-		// Message sent successfully
-	default:
-		// 通道已满或没有接收方，这里不阻塞
-		// Channel is full or has no receiver, don't block here
-	}
+	// select {
+	// case ec.nodeCompleteChan <- nodeId:
+	// 	// 消息成功发送
+	// 	// Message sent successfully
+	// default:
+	// 	// 通道已满或没有接收方，这里不阻塞
+	// 	// Channel is full or has no receiver, don't block here
+	// }
+	ec.nodeCompleteChan <- nodeId
 }
 
 // isContextCancelled 检查上下文是否已取消

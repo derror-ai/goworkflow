@@ -52,9 +52,6 @@ func (w *Workflow) AddNode(node *Node) error {
 	}
 
 	// 将节点添加到图中
-	// Add the node to the graph
-	vertex := gograph.NewVertex(node.ID)
-	w.graph.AddVertex(vertex)
 	w.nodes[node.ID] = node
 
 	return nil
@@ -166,16 +163,6 @@ func (w *Workflow) Compile() error {
 	// If there is no entry node, there is a problem
 	if entryNodeID == "" {
 		return w.NewError("workflow has no entry point")
-	}
-
-	// 分析节点之间的关系，设置直接调用标记
-	// Analyze relationships between nodes, set direct call flag
-	for _, node := range w.nodes {
-		// 只有一个子节点的节点可以使用直接调用
-		// Nodes with only one child can use direct call
-		if len(node.Children) == 1 {
-			node.DirectCall = true
-		}
 	}
 
 	// 保存编译结果
