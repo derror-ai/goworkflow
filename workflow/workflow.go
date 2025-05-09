@@ -15,10 +15,18 @@ type Workflow struct {
 	ID             string // 工作流ID (Workflow ID)
 	graph          gograph.Graph[string]
 	nodes          map[string]*Node // 节点ID到节点的映射 (Mapping from node ID to node)
+	edges          []Edge           // 工作流中的所有边 (All edges in the workflow)
 	mutex          sync.RWMutex
 	isCompiled     bool     // 标记工作流是否已编译 (Flag to indicate if the workflow is compiled)
 	executionOrder []string // 节点执行顺序（拓扑排序结果） (Node execution order (result of topological sort))
 	entryNodeID    string   // 入口节点ID（没有父节点的节点） (Entry node ID (node without parents))
+}
+
+// Edge 表示工作流中的一条边
+// Edge represents an edge in the workflow
+type Edge struct {
+	From string
+	To   string
 }
 
 // NewWorkflow 创建一个新的工作流
@@ -165,6 +173,19 @@ func (w *Workflow) Compile() error {
 		return w.NewError("workflow has no entry point")
 	}
 
+	// 收集所有边信息
+	// Collect all edge information
+	var edges []Edge
+	for nodeID, node := range w.nodes {
+		for _, childID := range node.Children {
+			edges = append(edges, Edge{
+				From: nodeID,
+				To:   childID,
+			})
+		}
+	}
+	w.edges = edges
+
 	// 保存编译结果
 	// Save compilation results
 	w.executionOrder = executionOrder
@@ -218,8 +239,8 @@ func (w *Workflow) Execute(ctx context.Context, input interface{}) (*WorkflowCon
 	return execCtx, err
 }
 
-// NewWorkflowError 创建一个工作流错误，可选包含节点ID
-// NewWorkflowError creates a workflow error, optionally containing a node ID
+// NewError 创建一个工作流错误，可选包含节点ID
+// NewError creates a workflow error, optionally containing a node ID
 func (w *Workflow) NewError(message string, nodeID ...string) error {
 	err := &WorkflowError{
 		WorkflowID: w.ID,
@@ -231,4 +252,16 @@ func (w *Workflow) NewError(message string, nodeID ...string) error {
 	}
 
 	return err
+}
+
+// GetAllNodes 返回工作流中的所有节点
+// GetAllNodes returns all nodes in the workflow
+func (w *Workflow) GetAllNodes() map[string]*Node {
+	return w.nodes
+}
+
+// GetAllEdges 返回工作流中的所有边
+// GetAllEdges returns all edges in the workflow
+func (w *Workflow) GetAllEdges() []Edge {
+	return w.edges
 }
