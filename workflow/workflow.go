@@ -265,3 +265,9 @@ func (w *Workflow) GetAllNodes() map[string]*Node {
 func (w *Workflow) GetAllEdges() []Edge {
 	return w.edges
 }
+
+// GetEntryNodeID 返回工作流的入口节点ID
+// GetEntryNodeID returns the entry node ID of the workflow
+func (w *Workflow) GetEntryNodeID() string {
+	return w.entryNodeID
+}
