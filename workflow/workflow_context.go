@@ -174,9 +174,6 @@ func (ec *WorkflowContext) tryStartNode(nodeID string) {
 			parentCanceledCount++
 			continue
 		}
-
-		// parent 正常结束
-		break
 	}
 
 	// 如果所有父节点都已取消，则取消当前节点
