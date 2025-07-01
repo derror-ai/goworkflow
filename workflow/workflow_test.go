@@ -508,3 +508,71 @@ func TestConditionalDispatch(t *testing.T) {
 		t.Errorf("Unexpected end node result: %v", results["end"])
 	}
 }
+
+// TestConditionalDispatch tests conditional dispatch functionality
+func TestConditionalDispatch2(t *testing.T) {
+	// Create workflow
+	w := NewWorkflow("test-conditional-dispatch2")
+
+	// Create processing nodes
+	startNodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+		t.Logf("Start node processing input: %v, parent result: %v", req, parentResult)
+		// Return conditional selection signal, only selecting route1 node for execution
+		return SelectNodes("start-result", []string{"route1"})
+	}
+
+	route1NodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+		t.Logf("Route1 node processing input: %v, parent result: %v", req, parentResult)
+		return SelectNodes("route1-result", []string{"route2"})
+	}
+
+	route2NodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+		t.Logf("Route2 node processing input: %v, parent result: %v", req, parentResult)
+		return "route2-result", nil, nil
+	}
+
+	endNodeFunc := func(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+		t.Logf("End node processing input: %v, parent result: %v", req, parentResult)
+		return "end-result", nil, nil
+	}
+
+	// Add nodes to the workflow
+	w.AddNodeFunc("start", startNodeFunc)
+	w.AddNodeFunc("route1", route1NodeFunc)
+	w.AddNodeFunc("route2", route2NodeFunc)
+	w.AddNodeFunc("end", endNodeFunc)
+
+	// Build routing branches: start -> (route1, route2) -> end
+	w.AddEdge("start", "route1")
+	w.AddEdge("start", "route2")
+	w.AddEdge("route1", "end")
+	w.AddEdge("route1", "route2")
+	w.AddEdge("route2", "end")
+
+	// Compile workflow
+	err := w.Compile()
+	if err != nil {
+		t.Fatalf("Failed to compile workflow: %v", err)
+	}
+
+	// Execute workflow
+	result, err := w.Execute(context.Background(), "test-data")
+	if err != nil {
+		t.Fatalf("Workflow execution failed: %v", err)
+	}
+
+	// Verify conditional dispatch worked as expected
+	results := result.GetResults()
+	if results["start"] != "start-result" {
+		t.Errorf("Unexpected start node result: %v", results["start"])
+	}
+	if results["route1"] != "route1-result" {
+		t.Errorf("Unexpected route1 node result: %v", results["route1"])
+	}
+	if results["route2"] != "route2-result" {
+		t.Errorf("Unexpected route2 node result: %v", results["route2"])
+	}
+	if results["end"] != "end-result" {
+		t.Errorf("Unexpected end node result: %v", results["end"])
+	}
+}

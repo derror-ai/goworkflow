@@ -181,7 +181,7 @@ func (ec *WorkflowContext) tryStartNode(nodeID string) {
 
 	// 如果所有父节点都已取消，则取消当前节点
 	// If all parent nodes have been canceled, cancel the current node
-	if parentCanceledCount >= parentCount {
+	if parentCount > 0 && parentCanceledCount >= parentCount {
 		ec.markNodeAsCanceled(nc)
 		return
 	}
