@@ -144,7 +144,8 @@ func (ec *WorkflowContext) tryStartNode(nodeID string) {
 
 	// 检查是否所有父节点都是已取消
 	// Check if all parent nodes have been canceled
-	allParentsCanceled := len(nc.Node.Parents) > 0 // 只有至少有一个父节点时才考虑 (Only consider when there is at least one parent node)
+	parentCount := len(nc.Node.Parents)
+	parentCanceledCount := 0
 
 	// 遍历父节点状态
 	// Traverse parent node states
@@ -163,20 +164,24 @@ func (ec *WorkflowContext) tryStartNode(nodeID string) {
 		if parentNC.HasSelectedChildren() && !parentNC.IsChildSelected(nc.NodeID) {
 			// 父节点使用了条件分发但未选择此节点，则取消该节点
 			// The parent node used conditional dispatching but did not select this node, so cancel this node
-			ec.markNodeAsCanceled(nc)
-			return
+			parentCanceledCount++
+			continue
 		}
 
-		// 如果有父节点未取消，则不能直接cancel子节点
-		// If any parent node is not canceled, the child node cannot be directly canceled
-		if parentState != NodeStateCanceled {
-			allParentsCanceled = false
+		// 如果有父节点已取消，则需要取消当前节点
+		// If any parent node is canceled, the current node needs to be canceled
+		if parentState == NodeStateCanceled {
+			parentCanceledCount++
+			continue
 		}
+
+		// parent 正常结束
+		break
 	}
 
 	// 如果所有父节点都已取消，则取消当前节点
 	// If all parent nodes have been canceled, cancel the current node
-	if allParentsCanceled {
+	if parentCanceledCount >= parentCount {
 		ec.markNodeAsCanceled(nc)
 		return
 	}
