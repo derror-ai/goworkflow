@@ -88,7 +88,7 @@ func (nc *NodeContext) SetStarted(startTime time.Time, sessionID string) bool {
 	nc.mutex.Lock()
 	defer nc.mutex.Unlock()
 
-	if nc.IsStarted || sessionID != "" {
+	if nc.IsStarted || nc.StartSessionID != "" {
 		return false
 	}
 
