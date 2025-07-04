@@ -29,6 +29,7 @@ type NodeContext struct {
 	EndTime          time.Time        // 节点结束执行时间 (Node execution end time)
 	ElapsedTime      time.Duration    // 节点执行耗时 (Node execution elapsed time)
 	IsStarted        bool             // 节点是否已启动 (Whether the node has started)
+	StartSessionID   string           // 节点启动会话ID (Node start session ID)
 	IsCompleted      bool             // 节点是否已完成 (Whether the node has completed)
 	IsCanceled       bool             // 节点是否已取消 (Whether the node has been canceled)
 	SelectedChildren []string         // 存储节点选择的子节点ID列表，用于条件分发 (Stores list of child node IDs selected by the node, used for conditional dispatching)
@@ -83,15 +84,23 @@ func (nc *NodeContext) GetResult() interface{} {
 
 // SetStarted 标记节点为已启动
 // SetStarted marks the node as started
-func (nc *NodeContext) SetStarted(startTime time.Time) {
+func (nc *NodeContext) SetStarted(startTime time.Time, sessionID string) bool {
 	nc.mutex.Lock()
 	defer nc.mutex.Unlock()
+
+	if nc.IsStarted || sessionID != "" {
+		return false
+	}
+
 	nc.IsStarted = true
 	nc.StartTime = startTime
+	nc.StartSessionID = sessionID
 	// 节点启动时，不再是创建状态，但也不是完成状态
 	// 因此只需要修改IsStarted标志，保持State不变
 	// When the node starts, it is no longer in the created state, but not yet in the completed state
 	// Therefore, only the IsStarted flag needs to be modified, keeping the State unchanged
+
+	return true
 }
 
 // SetCompleted 标记节点为已完成

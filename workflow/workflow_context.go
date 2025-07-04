@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // 工作流状态常量
@@ -186,7 +188,13 @@ func (ec *WorkflowContext) tryStartNode(nodeID string) {
 	// 所有父节点已完成且该节点在条件分发中被选中，标记为已启动
 	// All parent nodes have completed and this node has been selected in conditional dispatching, mark as started
 	now := time.Now()
-	nc.SetStarted(now)
+	isSuccess := nc.SetStarted(now, uuid.New().String())
+	
+	// 如果节点已启动或会话ID不为空，则不启动
+	// If the node has started or the session ID is not empty, do not start
+	if !isSuccess {
+		return
+	}
 
 	// 收集所有父节点的结果作为当前节点的输入
 	// Collect all parent node results as input for the current node
