@@ -209,8 +209,6 @@ func (w *Workflow) IsCompiled() bool {
 // This is the recommended way to execute a workflow, it will automatically compile the workflow (if not yet compiled),
 // create execution context, start the entry node, and wait for all nodes to complete
 func (w *Workflow) Execute(ctx context.Context, input interface{}) (*WorkflowContext, error) {
-	w.mutex.RLock()
-	defer w.mutex.RUnlock()
 
 	if !w.isCompiled {
 		return nil, w.NewError("workflow must be compiled before execution")
