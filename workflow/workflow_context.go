@@ -55,6 +55,13 @@ type WorkflowContext struct {
 	// 节点完成通知通道
 	// Node completion notification channel
 	nodeCompleteChan chan string
+
+	// 事件存储
+	// Event store
+	EventStore EventStore // 事件存储器 (Event store)
+
+	// enable events
+	enableEvents bool
 }
 
 // NewWorkflowContext 创建一个新的工作流执行上下文
@@ -82,6 +89,7 @@ func NewWorkflowContext(w *Workflow, input interface{}) *WorkflowContext {
 		StartTime:        now,
 		EndTime:          time.Time{},
 		nodeCompleteChan: make(chan string, nodeCount*2),
+		EventStore:       NewDefaultEventStore(), // 初始化事件存储器
 	}
 
 	// 初始化NodeContexts
@@ -96,6 +104,10 @@ func NewWorkflowContext(w *Workflow, input interface{}) *WorkflowContext {
 	// 初始化上下文结构
 	// Initialize context structure
 	return workflowCtx
+}
+
+func (ec *WorkflowContext) EnableEvents(enable bool) {
+	ec.enableEvents = enable
 }
 
 // getNodeContext 安全地获取节点上下文，如果不存在则返回nil
@@ -189,7 +201,7 @@ func (ec *WorkflowContext) tryStartNode(nodeID string) {
 	// All parent nodes have completed and this node has been selected in conditional dispatching, mark as started
 	now := time.Now()
 	isSuccess := nc.SetStarted(now, uuid.New().String())
-	
+
 	// 如果节点已启动或会话ID不为空，则不启动
 	// If the node has started or the session ID is not empty, do not start
 	if !isSuccess {
@@ -243,6 +255,11 @@ func (ec *WorkflowContext) Start() error {
 // executeNode 执行节点的核心逻辑，无论是直接调用还是在协程中调用
 // executeNode executes the core logic of the node, whether called directly or in a goroutine
 func (ec *WorkflowContext) executeNode(nc *NodeContext) {
+
+	// 发射节点开始事件
+	// Emit node started event
+	ec.EmitEvent(NodeStarted, "", nc, nil)
+
 	// 执行节点函数
 	// Execute node function
 	result, signal, err := nc.Node.Execute(nc, ec.Input, nc.Input)
@@ -256,6 +273,9 @@ func (ec *WorkflowContext) executeNode(nc *NodeContext) {
 	// 先处理错误
 	// Handle errors first
 	if err != nil {
+		// 发射节点失败事件
+		// Emit node failed event
+		ec.EmitEvent(NodeCompleted, StateFailed, nc, err)
 		ec.markWorkflowAsError(nc, err)
 		return
 	}
@@ -272,6 +292,10 @@ func (ec *WorkflowContext) executeNode(nc *NodeContext) {
 			nc.SetSelectedChildren(s.TargetIDs)
 		}
 	}
+
+	// 发射节点成功完成事件
+	// Emit node completed successfully event
+	ec.EmitEvent(NodeCompleted, StateSuccess, nc, nil)
 
 	// 通知节点完成 - 使用非阻塞发送以防止死锁
 	// Notify node completion - use non-blocking send to prevent deadlock
@@ -312,6 +336,10 @@ func (ec *WorkflowContext) setStarted() {
 	defer ec.stateMutex.Unlock()
 	ec.IsStarted = true
 	ec.State = WorkflowStateRunning
+
+	// 工作流开始事件
+	// Emit workflow started event
+	ec.EmitEvent(WorkflowStarted, "", nil, nil)
 }
 
 // setCompleted 标记工作流为已完成
@@ -494,7 +522,27 @@ func (ec *WorkflowContext) GetWorkflowTimingInfo() int64 {
 // Wait 等待所有节点完成或工作流被取消
 // Wait waits for all nodes to complete or for the workflow to be canceled
 func (ec *WorkflowContext) Wait() error {
-	defer ec.Cancel() // 确保上下文被取消 (Ensure context is canceled)
+	// 确保上下文被取消 (Ensure context is canceled)
+	defer ec.Cancel()
+
+	// 确保工作流完成事件被发射 (Ensure workflow completed event is emitted)
+	defer func() {
+
+		state := StateSuccess
+		if ec.Error != nil {
+			state = StateFailed
+		} else if ec.IsCanceled {
+			state = StateCanceled
+		}
+
+		// 发射工作流完成事件
+		// Emit workflow completed event
+		ec.EmitEvent(WorkflowCompleted, state, nil, ec.Error)
+
+		// 关闭事件存储器
+		// Close event store
+		ec.EventStore.Close()
+	}()
 
 	// 首先检查全局错误，如果有则直接返回
 	// First check for global errors, if any return directly
@@ -660,4 +708,10 @@ func (ec *WorkflowContext) GetResults() map[string]interface{} {
 	}
 
 	return results
+}
+
+func (ec *WorkflowContext) EmitEvent(eventType EventType, state EventState, nc *NodeContext, err error) {
+	if ec.enableEvents {
+		ec.EventStore.Emit(eventType, state, ec, nc, err)
+	}
 }

@@ -202,18 +202,9 @@ func (w *Workflow) IsCompiled() bool {
 	return w.isCompiled
 }
 
-// Execute 执行完整工作流
-// 这是执行工作流的推荐方式，会自动编译工作流（如果尚未编译），
-// 创建执行上下文，启动入口节点，并等待所有节点完成
-// Execute executes the complete workflow
-// This is the recommended way to execute a workflow, it will automatically compile the workflow (if not yet compiled),
-// create execution context, start the entry node, and wait for all nodes to complete
-func (w *Workflow) Execute(ctx context.Context, input interface{}) (*WorkflowContext, error) {
-
-	if !w.isCompiled {
-		return nil, w.NewError("workflow must be compiled before execution")
-	}
-
+// NewWorkflowContext 创建一个新的工作流上下文
+// NewWorkflowContext creates a new workflow context
+func (w *Workflow) NewWorkflowContext(ctx context.Context, input interface{}) *WorkflowContext {
 	// 创建执行上下文
 	// Create execution context
 	execCtx := NewWorkflowContext(w, input)
@@ -222,19 +213,35 @@ func (w *Workflow) Execute(ctx context.Context, input interface{}) (*WorkflowCon
 	// Set the passed ctx as the parent of the context
 	execCtx.Ctx, execCtx.Cancel = context.WithCancel(ctx)
 
+	// 返回执行上下文
+	// Return execution context
+	return execCtx
+}
+
+// Execute 执行完整工作流
+// 这是执行工作流的推荐方式，会自动编译工作流（如果尚未编译），
+// 创建执行上下文，启动入口节点，并等待所有节点完成
+// Execute executes the complete workflow
+// This is the recommended way to execute a workflow, it will automatically compile the workflow (if not yet compiled),
+// create execution context, start the entry node, and wait for all nodes to complete
+func (w *Workflow) Execute(execCtx *WorkflowContext) error {
+
+	if !w.isCompiled {
+		return w.NewError("workflow must be compiled before execution")
+	}
+
 	// 使用Start方法启动工作流
 	// Use Start method to start the workflow
 	err := execCtx.Start()
 	if err != nil {
 		// 如果启动失败，直接返回错误
 		// If start fails, return error directly
-		return nil, err
+		return err
 	}
 
 	// 等待所有节点完成
 	// Wait for all nodes to complete
-	err = execCtx.Wait()
-	return execCtx, err
+	return execCtx.Wait()
 }
 
 // NewError 创建一个工作流错误，可选包含节点ID

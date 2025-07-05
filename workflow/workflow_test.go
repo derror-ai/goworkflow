@@ -83,13 +83,14 @@ func TestWorkflowExecution(t *testing.T) {
 	}
 
 	// Execute workflow
-	result, err := w.Execute(context.Background(), "test-input")
+	execCtx := w.NewWorkflowContext(context.Background(), "test-input")
+	err = w.Execute(execCtx)
 	if err != nil {
 		t.Fatalf("Failed to execute workflow: %v", err)
 	}
 
 	// Check results
-	results := result.GetResults()
+	results := execCtx.GetResults()
 	for nodeID, output := range results {
 		t.Logf("Node %s result: %v", nodeID, output)
 	}
@@ -100,14 +101,14 @@ func TestWorkflowExecution(t *testing.T) {
 	}
 
 	// Check timing information
-	t.Logf("Workflow start time: %s", time.Unix(0, result.GetStartTimeNano()).Format(time.RFC3339Nano))
-	t.Logf("Workflow end time: %s", time.Unix(0, result.GetEndTimeNano()).Format(time.RFC3339Nano))
-	t.Logf("Workflow total time: %d ns", result.GetWorkflowTimingInfo())
+	t.Logf("Workflow start time: %s", time.Unix(0, execCtx.GetStartTimeNano()).Format(time.RFC3339Nano))
+	t.Logf("Workflow end time: %s", time.Unix(0, execCtx.GetEndTimeNano()).Format(time.RFC3339Nano))
+	t.Logf("Workflow total time: %d ns", execCtx.GetWorkflowTimingInfo())
 
-	for nodeID, timeNano := range result.GetNodeTimingInfo() {
+	for nodeID, timeNano := range execCtx.GetNodeTimingInfo() {
 		t.Logf("Node %s:", nodeID)
-		t.Logf("  Start time: %s", time.Unix(0, result.GetNodeStartTimeNano(nodeID)).Format(time.RFC3339Nano))
-		t.Logf("  End time: %s", time.Unix(0, result.GetNodeEndTimeNano(nodeID)).Format(time.RFC3339Nano))
+		t.Logf("  Start time: %s", time.Unix(0, execCtx.GetNodeStartTimeNano(nodeID)).Format(time.RFC3339Nano))
+		t.Logf("  End time: %s", time.Unix(0, execCtx.GetNodeEndTimeNano(nodeID)).Format(time.RFC3339Nano))
 		t.Logf("  Execution time: %d ns", timeNano)
 
 		// Verify node execution time is at least 50ms (our sleep time)
@@ -148,18 +149,19 @@ func TestConcurrentWorkflowExecution(t *testing.T) {
 
 	// Execute workflow concurrently
 	numConcurrent := 3
-	var resultsChan = make(chan *WorkflowContext, numConcurrent)
+	var execCtxChan = make(chan *WorkflowContext, numConcurrent)
 	var errorsChan = make(chan error, numConcurrent)
 
 	for i := 0; i < numConcurrent; i++ {
 		go func(instance int) {
 			input := fmt.Sprintf("input-%d", instance)
-			result, err := w.Execute(context.Background(), input)
+			execCtx := w.NewWorkflowContext(context.Background(), input)
+			err := w.Execute(execCtx)
 			if err != nil {
 				errorsChan <- err
 				return
 			}
-			resultsChan <- result
+			execCtxChan <- execCtx
 		}(i)
 	}
 
@@ -168,7 +170,7 @@ func TestConcurrentWorkflowExecution(t *testing.T) {
 		select {
 		case err := <-errorsChan:
 			t.Errorf("Instance %d failed: %v", i, err)
-		case result := <-resultsChan:
+		case result := <-execCtxChan:
 			t.Logf("Instance completed with results: %v", result.GetResults())
 			t.Logf("Instance start time: %s", time.Unix(0, result.GetStartTimeNano()).Format(time.RFC3339Nano))
 			t.Logf("Instance end time: %s", time.Unix(0, result.GetEndTimeNano()).Format(time.RFC3339Nano))
@@ -233,13 +235,14 @@ func TestWorkflowMultiChildrenExecution(t *testing.T) {
 	}
 
 	// Execute workflow
-	result, err := w.Execute(context.Background(), "test-input")
+	execCtx := w.NewWorkflowContext(context.Background(), "test-input")
+	err = w.Execute(execCtx)
 	if err != nil {
 		t.Fatalf("Failed to execute workflow: %v", err)
 	}
 
 	// Check results
-	results := result.GetResults()
+	results := execCtx.GetResults()
 	for nodeID, output := range results {
 		t.Logf("Node %s result: %v", nodeID, output)
 	}
@@ -250,15 +253,15 @@ func TestWorkflowMultiChildrenExecution(t *testing.T) {
 	}
 
 	// Check timing information
-	t.Logf("Workflow start time: %s", time.Unix(0, result.GetStartTimeNano()).Format(time.RFC3339Nano))
-	t.Logf("Workflow end time: %s", time.Unix(0, result.GetEndTimeNano()).Format(time.RFC3339Nano))
-	t.Logf("Workflow total time: %d ns", result.GetWorkflowTimingInfo())
+	t.Logf("Workflow start time: %s", time.Unix(0, execCtx.GetStartTimeNano()).Format(time.RFC3339Nano))
+	t.Logf("Workflow end time: %s", time.Unix(0, execCtx.GetEndTimeNano()).Format(time.RFC3339Nano))
+	t.Logf("Workflow total time: %d ns", execCtx.GetWorkflowTimingInfo())
 
 	// 获取D、E、F、G节点的开始时间
-	dStartTime := result.GetNodeStartTimeNano("D")
-	eStartTime := result.GetNodeStartTimeNano("E")
-	fStartTime := result.GetNodeStartTimeNano("F")
-	gStartTime := result.GetNodeStartTimeNano("G")
+	dStartTime := execCtx.GetNodeStartTimeNano("D")
+	eStartTime := execCtx.GetNodeStartTimeNano("E")
+	fStartTime := execCtx.GetNodeStartTimeNano("F")
+	gStartTime := execCtx.GetNodeStartTimeNano("G")
 
 	// 检查这些节点的开始时间差异不应超过100ms
 	maxDiff := int64(100 * 1000 * 1000) // 100ms转换为纳秒
@@ -289,10 +292,10 @@ func TestWorkflowMultiChildrenExecution(t *testing.T) {
 			float64(timeDiff)/1000000.0)
 	}
 
-	for nodeID, timeNano := range result.GetNodeTimingInfo() {
+	for nodeID, timeNano := range execCtx.GetNodeTimingInfo() {
 		t.Logf("Node %s:", nodeID)
-		t.Logf("  Start time: %s", time.Unix(0, result.GetNodeStartTimeNano(nodeID)).Format(time.RFC3339Nano))
-		t.Logf("  End time: %s", time.Unix(0, result.GetNodeEndTimeNano(nodeID)).Format(time.RFC3339Nano))
+		t.Logf("  Start time: %s", time.Unix(0, execCtx.GetNodeStartTimeNano(nodeID)).Format(time.RFC3339Nano))
+		t.Logf("  End time: %s", time.Unix(0, execCtx.GetNodeEndTimeNano(nodeID)).Format(time.RFC3339Nano))
 		t.Logf("  Execution time: %d ns", timeNano)
 
 		// Verify node execution time is at least 50ms (our sleep time)
@@ -350,7 +353,8 @@ func TestWorkflowTimeoutAndCancel(t *testing.T) {
 	defer cancel()
 
 	// Execute workflow
-	_, err = w.Execute(ctx, "test-input") // Ignore result, only check for error
+	execCtx := w.NewWorkflowContext(ctx, "test-input")
+	err = w.Execute(execCtx) // Ignore result, only check for error
 	// Expect timeout error
 	if err == nil {
 		t.Fatalf("Expected timeout error, got nil")
@@ -402,7 +406,8 @@ func TestNodeError(t *testing.T) {
 	}
 
 	// Execute workflow
-	result, err := w.Execute(context.Background(), "test-input")
+	execCtx := w.NewWorkflowContext(context.Background(), "test-input")
+	err = w.Execute(execCtx)
 
 	// Expect error
 	if err == nil {
@@ -411,10 +416,10 @@ func TestNodeError(t *testing.T) {
 	t.Logf("Got expected error: %v", err)
 
 	// Even though an error was returned, some nodes should have completed execution
-	t.Logf("Partial results before error: %v", result.GetResults())
+	t.Logf("Partial results before error: %v", execCtx.GetResults())
 
 	// Verify that start node and normal node executed
-	results := result.GetResults()
+	results := execCtx.GetResults()
 	if _, ok := results["start"]; !ok {
 		t.Errorf("Start node should have executed")
 	}
@@ -485,19 +490,20 @@ func TestConditionalDispatch(t *testing.T) {
 	}
 
 	// Execute workflow
-	result, err := w.Execute(context.Background(), "test-data")
+	execCtx := w.NewWorkflowContext(context.Background(), "test-data")
+	err = w.Execute(execCtx)
 	if err != nil {
 		t.Fatalf("Workflow execution failed: %v", err)
 	}
 
 	// Confirm route2 node is marked as cancelled
-	state := result.GetNodeState("route2")
+	state := execCtx.GetNodeState("route2")
 	if state != NodeStateCanceled {
 		t.Errorf("Node route2 should be marked as canceled, got state: %v", state)
 	}
 
 	// Verify conditional dispatch worked as expected
-	results := result.GetResults()
+	results := execCtx.GetResults()
 	if results["start"] != "start-result" {
 		t.Errorf("Unexpected start node result: %v", results["start"])
 	}
@@ -556,13 +562,14 @@ func TestConditionalDispatch2(t *testing.T) {
 	}
 
 	// Execute workflow
-	result, err := w.Execute(context.Background(), "test-data")
+	execCtx := w.NewWorkflowContext(context.Background(), "test-data")
+	err = w.Execute(execCtx)
 	if err != nil {
 		t.Fatalf("Workflow execution failed: %v", err)
 	}
 
 	// Verify conditional dispatch worked as expected
-	results := result.GetResults()
+	results := execCtx.GetResults()
 	if results["start"] != "start-result" {
 		t.Errorf("Unexpected start node result: %v", results["start"])
 	}
@@ -653,13 +660,14 @@ func TestConditionalDispatch3(t *testing.T) {
 	}
 
 	// Execute workflow
-	result, err := w.Execute(context.Background(), "test-data")
+	execCtx := w.NewWorkflowContext(context.Background(), "test-data")
+	err = w.Execute(execCtx)
 	if err != nil {
 		t.Fatalf("Workflow execution failed: %v", err)
 	}
 
 	// Verify conditional dispatch worked as expected
-	results := result.GetResults()
+	results := execCtx.GetResults()
 	if results["start"] != "start-result" {
 		t.Errorf("Unexpected start node result: %v", results["start"])
 	}

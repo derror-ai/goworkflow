@@ -138,7 +138,26 @@ func main() {
 	startTime := time.Now()
 	fmt.Printf("Start time: %s\n", startTime.Format("15:04:05.000"))
 
-	result, err := w.Execute(context.Background(), "Workflow input data")
+	ctx := context.Background()
+	// 创建工作流上下文
+	execCtx := w.NewWorkflowContext(context.Background(), "Workflow input data")
+	execCtx.EnableEvents(true)
+
+	// event 监听
+	go func() {
+		es := execCtx.EventStore
+		for {
+			event, ok := es.Next(ctx)
+			if !ok {
+				break
+			}
+
+			fmt.Printf("Event: %v\n", event.String())
+		}
+	}()
+
+	// 执行工作流
+	err = w.Execute(execCtx)
 	if err != nil {
 		fmt.Println("Error executing workflow:", err)
 		return
@@ -151,13 +170,13 @@ func main() {
 
 	// 显示结果 (Display results)
 	fmt.Println("\nWorkflow execution results:")
-	for nodeID, output := range result.GetResults() {
+	for nodeID, output := range execCtx.GetResults() {
 		fmt.Printf("  Node %s: %v\n", nodeID, output)
 	}
 
 	// 显示计时信息 (Display timing information)
-	printTimingInfo(result)
+	printTimingInfo(execCtx)
 
 	// 显示工作流树状结构 (Display workflow tree structure)
-	printWorkflowTree(w, result)
+	printWorkflowTree(w, execCtx)
 }

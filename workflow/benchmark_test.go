@@ -62,15 +62,16 @@ func BenchmarkWorkflowExecution(b *testing.B) {
 
 	// Run workflow execution b.N times
 	for i := 0; i < b.N; i++ {
-		result, err := w.Execute(ctx, fmt.Sprintf("bench-input-%d", i))
+		execCtx := w.NewWorkflowContext(ctx, fmt.Sprintf("bench-input-%d", i))
+		err := w.Execute(execCtx)
 		if err != nil {
 			b.Fatalf("Workflow execution failed: %v", err)
 		}
 
 		// Count non-cancelled nodes
 		execCount := 0
-		for nodeID := range result.NodeContexts {
-			nc := result.getNodeContext(nodeID)
+		for nodeID := range execCtx.NodeContexts {
+			nc := execCtx.getNodeContext(nodeID)
 			if nc.GetState() != NodeStateCanceled && nc.IsCompleted {
 				execCount++
 			}
@@ -115,15 +116,16 @@ func BenchmarkWorkflowCompileAndExecute(b *testing.B) {
 		}
 
 		// Execute workflow
-		result, err := flow.Execute(ctx, fmt.Sprintf("bench-input-%d", i))
+		execCtx := flow.NewWorkflowContext(ctx, fmt.Sprintf("bench-input-%d", i))
+		err = flow.Execute(execCtx)
 		if err != nil {
 			b.Fatalf("Workflow execution failed: %v", err)
 		}
 
 		// Count non-cancelled nodes
 		execCount := 0
-		for nodeID := range result.NodeContexts {
-			nc := result.getNodeContext(nodeID)
+		for nodeID := range execCtx.NodeContexts {
+			nc := execCtx.getNodeContext(nodeID)
 			if nc.GetState() != NodeStateCanceled && nc.IsCompleted {
 				execCount++
 			}
@@ -150,15 +152,16 @@ func BenchmarkParallelWorkflowExecution(b *testing.B) {
 		counter := 0
 		for pb.Next() {
 			input := fmt.Sprintf("parallel-input-%d", counter)
-			result, err := w.Execute(ctx, input)
+			execCtx := w.NewWorkflowContext(ctx, input)
+			err := w.Execute(execCtx)
 			if err != nil {
 				b.Fatalf("Parallel workflow execution failed: %v", err)
 			}
 
 			// Count non-cancelled nodes
 			execCount := 0
-			for nodeID := range result.NodeContexts {
-				nc := result.getNodeContext(nodeID)
+			for nodeID := range execCtx.NodeContexts {
+				nc := execCtx.getNodeContext(nodeID)
 				if nc.GetState() != NodeStateCanceled && nc.IsCompleted {
 					execCount++
 				}
@@ -210,15 +213,16 @@ func BenchmarkSelectiveExecution(b *testing.B) {
 	// Run workflow execution b.N times
 	for i := 0; i < b.N; i++ {
 		input := fmt.Sprintf("selective-input-%d", i)
-		result, err := w.Execute(ctx, input)
+		execCtx := w.NewWorkflowContext(ctx, input)
+		err := w.Execute(execCtx)
 		if err != nil {
 			b.Fatalf("Workflow execution failed: %v", err)
 		}
 
 		executedCount := 0
 
-		for nodeID := range result.NodeContexts {
-			nc := result.getNodeContext(nodeID)
+		for nodeID := range execCtx.NodeContexts {
+			nc := execCtx.getNodeContext(nodeID)
 			state := nc.GetState()
 
 			if state == NodeStateCompleted {
@@ -227,7 +231,7 @@ func BenchmarkSelectiveExecution(b *testing.B) {
 		}
 
 		// Check result count
-		results := result.GetResults()
+		results := execCtx.GetResults()
 		resultCount := len(results)
 		var nodesWithResults []string
 		for nodeID := range results {
