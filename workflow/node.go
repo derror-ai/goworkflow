@@ -2,6 +2,8 @@ package workflow
 
 import (
 	"fmt"
+
+	"github.com/pkg/errors"
 )
 
 // NodeFunc 是工作流节点的通用函数定义
@@ -34,11 +36,17 @@ func NewNode(workflow *Workflow, id string, fn NodeFunc) *Node {
 
 // Execute 执行节点函数
 // Execute executes the node function
-func (n *Node) Execute(ctx *NodeContext, req interface{}, parentResult interface{}) (interface{}, Signal, error) {
+func (n *Node) Execute(ctx *NodeContext, req interface{}, parentResult interface{}) (result interface{}, signal Signal, err error) {
+	defer func() {
+		if er := recover(); er != nil {
+			err = errors.New(fmt.Sprintf("panic: %v", er))
+			fmt.Printf("panic: %+v\n", err)
+		}
+	}()
 
 	// 直接执行节点函数并返回结果
 	// Directly execute node function and return result
-	result, signal, err := n.Func(ctx, req, parentResult)
+	result, signal, err = n.Func(ctx, req, parentResult)
 	if err != nil {
 		return nil, nil, n.NewError(fmt.Sprintf("execution error: %v", err))
 	}
