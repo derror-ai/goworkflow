@@ -39,8 +39,8 @@ func NewNode(workflow *Workflow, id string, fn NodeFunc) *Node {
 func (n *Node) Execute(ctx *NodeContext, req interface{}, parentResult interface{}) (result interface{}, signal Signal, err error) {
 	defer func() {
 		if er := recover(); er != nil {
-			err = errors.New(fmt.Sprintf("panic: %v", er))
-			fmt.Printf("panic: %+v\n", err)
+			_err := errors.New(fmt.Sprintf("%v", er))
+			err = fmt.Errorf("panic: %+v", _err)
 		}
 	}()
 
